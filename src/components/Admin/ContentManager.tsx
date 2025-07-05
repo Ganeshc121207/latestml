@@ -15,7 +15,10 @@ import {
   Award,
   ChevronDown,
   ChevronRight,
-  Play
+  Play,
+  Settings,
+  Save,
+  X
 } from 'lucide-react';
 import Button from '../UI/Button';
 import Card from '../UI/Card';
@@ -24,6 +27,9 @@ import LectureEditor from './LectureEditor';
 import { Course, Week, Lecture, Assignment } from '../../types';
 import { 
   getCourses, 
+  createCourse,
+  updateCourse,
+  deleteCourse,
   getWeeks, 
   createWeek, 
   updateWeek, 
@@ -35,9 +41,11 @@ import {
   updateAssignment,
   deleteAssignment
 } from '../../services/database';
+import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 
 const ContentManager: React.FC = () => {
+  const { user } = useAuth();
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [weeks, setWeeks] = useState<Week[]>([]);
@@ -45,11 +53,13 @@ const ContentManager: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   // Modals
+  const [showCourseModal, setShowCourseModal] = useState(false);
   const [showWeekModal, setShowWeekModal] = useState(false);
   const [showLectureModal, setShowLectureModal] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
   
   // Editing states
+  const [editingCourse, setEditingCourse] = useState<Course | null>(null);
   const [editingWeek, setEditingWeek] = useState<Week | null>(null);
   const [editingLecture, setEditingLecture] = useState<Lecture | null>(null);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
@@ -96,6 +106,56 @@ const ContentManager: React.FC = () => {
       newExpanded.add(weekId);
     }
     setExpandedWeeks(newExpanded);
+  };
+
+  // Course Management
+  const handleCreateCourse = () => {
+    setEditingCourse(null);
+    setShowCourseModal(true);
+  };
+
+  const handleEditCourse = (course: Course) => {
+    setEditingCourse(course);
+    setShowCourseModal(true);
+  };
+
+  const handleSaveCourse = async (courseData: Partial<Course>) => {
+    if (!user) return;
+
+    try {
+      if (editingCourse) {
+        await updateCourse(editingCourse.id, courseData);
+        toast.success('Course updated successfully!');
+      } else {
+        const courseId = await createCourse({
+          ...courseData as Omit<Course, 'id'>,
+          createdBy: user.uid,
+          weeks: []
+        });
+        toast.success('Course created successfully!');
+      }
+      
+      await fetchCourses();
+      setShowCourseModal(false);
+      setEditingCourse(null);
+    } catch (error) {
+      toast.error('Failed to save course');
+    }
+  };
+
+  const handleDeleteCourse = async (courseId: string) => {
+    if (!confirm('Are you sure you want to delete this course? This will also delete all weeks, lectures, and assignments.')) return;
+
+    try {
+      await deleteCourse(courseId);
+      await fetchCourses();
+      if (selectedCourse?.id === courseId) {
+        setSelectedCourse(courses.length > 1 ? courses.find(c => c.id !== courseId) || null : null);
+      }
+      toast.success('Course deleted successfully!');
+    } catch (error) {
+      toast.error('Failed to delete course');
+    }
   };
 
   // Week Management
@@ -244,34 +304,74 @@ const ContentManager: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-white mb-2">Content Manager</h1>
-          <p className="text-dark-300">Manage course content, lectures, and assignments</p>
+          <p className="text-dark-300">Manage courses, content, lectures, and assignments</p>
         </div>
-        <Button onClick={handleCreateWeek} icon={<Plus className="h-4 w-4" />}>
-          Add Week
-        </Button>
+        <div className="flex items-center space-x-3">
+          <Button onClick={handleCreateCourse} icon={<Plus className="h-4 w-4" />}>
+            New Course
+          </Button>
+          {selectedCourse && (
+            <Button onClick={handleCreateWeek} icon={<Plus className="h-4 w-4" />}>
+              Add Week
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Course Selection */}
+      {/* Course Management */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white">Select Course</h2>
-          <BookOpen className="h-5 w-5 text-dark-400" />
+          <h2 className="text-xl font-semibold text-white">Courses ({courses.length})</h2>
+          <div className="flex items-center space-x-2">
+            <BookOpen className="h-5 w-5 text-dark-400" />
+            <Button size="sm" onClick={handleCreateCourse} icon={<Plus className="h-4 w-4" />}>
+              Create Course
+            </Button>
+          </div>
         </div>
+        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {courses.map((course) => (
             <motion.div
               key={course.id}
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setSelectedCourse(course)}
-              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+              className={`p-4 rounded-lg border-2 cursor-pointer transition-all relative ${
                 selectedCourse?.id === course.id
                   ? 'border-primary-600 bg-primary-600/10'
                   : 'border-dark-600 hover:border-dark-500'
               }`}
             >
-              <h3 className="text-white font-semibold mb-2">{course.title}</h3>
-              <p className="text-dark-300 text-sm">{course.description}</p>
+              <div onClick={() => setSelectedCourse(course)}>
+                <h3 className="text-white font-semibold mb-2">{course.title}</h3>
+                <p className="text-dark-300 text-sm mb-3">{course.description}</p>
+                <div className="flex items-center justify-between text-xs text-dark-400">
+                  <span>Created {new Date(course.createdAt).toLocaleDateString()}</span>
+                  <span>Updated {new Date(course.updatedAt).toLocaleDateString()}</span>
+                </div>
+              </div>
+              
+              {/* Course Actions */}
+              <div className="absolute top-2 right-2 flex items-center space-x-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEditCourse(course);
+                  }}
+                  icon={<Edit3 className="h-3 w-3" />}
+                />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDeleteCourse(course.id);
+                  }}
+                  icon={<Trash2 className="h-3 w-3" />}
+                />
+              </div>
             </motion.div>
           ))}
         </div>
@@ -550,6 +650,17 @@ const ContentManager: React.FC = () => {
         </Card>
       )}
 
+      {/* Course Modal */}
+      <CourseModal
+        isOpen={showCourseModal}
+        onClose={() => {
+          setShowCourseModal(false);
+          setEditingCourse(null);
+        }}
+        onSave={handleSaveCourse}
+        course={editingCourse}
+      />
+
       {/* Week Modal */}
       <WeekModal
         isOpen={showWeekModal}
@@ -587,6 +698,77 @@ const ContentManager: React.FC = () => {
   );
 };
 
+// Course Modal Component
+interface CourseModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (course: Partial<Course>) => void;
+  course: Course | null;
+}
+
+const CourseModal: React.FC<CourseModalProps> = ({ isOpen, onClose, onSave, course }) => {
+  const [formData, setFormData] = useState({
+    title: course?.title || '',
+    description: course?.description || ''
+  });
+
+  useEffect(() => {
+    if (course) {
+      setFormData({
+        title: course.title,
+        description: course.description
+      });
+    } else {
+      setFormData({
+        title: '',
+        description: ''
+      });
+    }
+  }, [course]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    onSave(formData);
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={course ? 'Edit Course' : 'Create Course'}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-dark-300 mb-2">Course Title</label>
+          <input
+            type="text"
+            value={formData.title}
+            onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+            className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
+            required
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-dark-300 mb-2">Description</label>
+          <textarea
+            value={formData.description}
+            onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+            className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
+            rows={3}
+            required
+          />
+        </div>
+
+        <div className="flex justify-end space-x-3">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="submit">
+            {course ? 'Update Course' : 'Create Course'}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
 // Week Modal Component
 interface WeekModalProps {
   isOpen: boolean;
@@ -605,6 +787,28 @@ const WeekModal: React.FC<WeekModalProps> = ({ isOpen, onClose, onSave, week, we
     endDate: week?.endDate ? week.endDate.split('T')[0] : '',
     isActive: week?.isActive || false
   });
+
+  useEffect(() => {
+    if (week) {
+      setFormData({
+        weekNumber: week.weekNumber,
+        title: week.title,
+        description: week.description,
+        startDate: week.startDate.split('T')[0],
+        endDate: week.endDate.split('T')[0],
+        isActive: week.isActive
+      });
+    } else {
+      setFormData({
+        weekNumber: weekNumber,
+        title: '',
+        description: '',
+        startDate: '',
+        endDate: '',
+        isActive: false
+      });
+    }
+  }, [week, weekNumber]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -725,6 +929,32 @@ const AssignmentModal: React.FC<AssignmentModalProps> = ({ isOpen, onClose, onSa
     attempts: assignment?.attempts || 3,
     isPublished: assignment?.isPublished || false
   });
+
+  useEffect(() => {
+    if (assignment) {
+      setFormData({
+        title: assignment.title,
+        description: assignment.description,
+        type: assignment.type,
+        totalPoints: assignment.totalPoints,
+        dueDate: assignment.dueDate.split('T')[0],
+        timeLimit: assignment.timeLimit || 0,
+        attempts: assignment.attempts,
+        isPublished: assignment.isPublished
+      });
+    } else {
+      setFormData({
+        title: '',
+        description: '',
+        type: 'homework',
+        totalPoints: 100,
+        dueDate: '',
+        timeLimit: 0,
+        attempts: 3,
+        isPublished: false
+      });
+    }
+  }, [assignment]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
