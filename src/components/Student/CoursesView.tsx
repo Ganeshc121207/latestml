@@ -12,7 +12,12 @@ import {
   Video,
   Activity,
   Lock,
-  PlayCircle
+  PlayCircle,
+  ChevronDown,
+  ChevronRight,
+  Eye,
+  EyeOff,
+  Users
 } from 'lucide-react';
 import Card from '../UI/Card';
 import Button from '../UI/Button';
@@ -28,13 +33,12 @@ const CoursesView: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [weeks, setWeeks] = useState<Week[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState<Week | null>(null);
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
   const [selectedLecture, setSelectedLecture] = useState<Lecture | null>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [loading, setLoading] = useState(true);
   const [showLectureViewer, setShowLectureViewer] = useState(false);
   const [showAssignmentModal, setShowAssignmentModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'lectures' | 'assignments'>('overview');
 
   useEffect(() => {
     fetchCourses();
@@ -67,6 +71,16 @@ const CoursesView: React.FC = () => {
     } catch (error) {
       toast.error('Failed to fetch course content');
     }
+  };
+
+  const toggleWeekExpansion = (weekId: string) => {
+    const newExpanded = new Set(expandedWeeks);
+    if (newExpanded.has(weekId)) {
+      newExpanded.delete(weekId);
+    } else {
+      newExpanded.add(weekId);
+    }
+    setExpandedWeeks(newExpanded);
   };
 
   const handleLectureSelect = (lecture: Lecture) => {
@@ -162,252 +176,261 @@ const CoursesView: React.FC = () => {
         </div>
       </Card>
 
+      {/* Course Content */}
       {selectedCourse && (
-        <>
-          {/* Course Content Tabs */}
-          <Card className="p-6">
-            <div className="flex space-x-1 mb-6">
-              {[
-                { id: 'overview', label: 'Overview', icon: BookOpen },
-                { id: 'lectures', label: 'Lectures', icon: Video },
-                { id: 'assignments', label: 'Assignments', icon: FileText }
-              ].map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id as any)}
-                    className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                      activeTab === tab.id
-                        ? 'bg-primary-600 text-white'
-                        : 'text-dark-300 hover:text-white hover:bg-dark-700'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4 mr-2" />
-                    {tab.label}
-                  </button>
-                );
-              })}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-white">{selectedCourse.title} - Course Content</h2>
+            <div className="flex items-center space-x-2 text-sm text-dark-400">
+              <span>{weeks.length} weeks</span>
+              <span>•</span>
+              <span>{weeks.reduce((acc, week) => acc + (week.lectures?.length || 0), 0)} lectures</span>
+              <span>•</span>
+              <span>{weeks.reduce((acc, week) => acc + (week.assignments?.length || 0), 0)} assignments</span>
             </div>
+          </div>
 
-            {/* Tab Content */}
-            <AnimatePresence mode="wait">
-              {activeTab === 'overview' && (
+          {weeks.length === 0 ? (
+            <div className="text-center py-12">
+              <Calendar className="h-16 w-16 text-dark-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-white mb-2">No content available yet</h3>
+              <p className="text-dark-300">Course content will be available soon</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {weeks.map((week) => (
                 <motion.div
-                  key="overview"
+                  key={week.id}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="space-y-6"
+                  className="bg-dark-700 rounded-lg overflow-hidden"
                 >
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div className="bg-dark-700 p-6 rounded-lg">
-                      <div className="flex items-center justify-between mb-4">
-                        <Calendar className="h-8 w-8 text-primary-400" />
-                        <span className="text-2xl font-bold text-white">{weeks.length}</span>
+                  {/* Week Header */}
+                  <div className="p-6 border-b border-dark-600">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <button
+                          onClick={() => toggleWeekExpansion(week.id)}
+                          className="text-dark-400 hover:text-white transition-colors"
+                        >
+                          {expandedWeeks.has(week.id) ? (
+                            <ChevronDown className="h-5 w-5" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5" />
+                          )}
+                        </button>
+                        <div className="w-10 h-10 bg-primary-600 rounded-full flex items-center justify-center">
+                          <span className="text-white font-bold">{week.weekNumber}</span>
+                        </div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-white">{week.title}</h3>
+                          <p className="text-dark-300 text-sm">{week.description}</p>
+                        </div>
                       </div>
-                      <h3 className="text-white font-semibold">Total Weeks</h3>
-                      <p className="text-dark-300 text-sm">Course duration</p>
+                      
+                      <div className="flex items-center space-x-2">
+                        {week.isActive ? (
+                          <span className="px-2 py-1 bg-accent-600 text-white text-xs rounded-full">Available</span>
+                        ) : (
+                          <span className="px-2 py-1 bg-dark-600 text-dark-300 text-xs rounded-full">Coming Soon</span>
+                        )}
+                      </div>
                     </div>
-                    <div className="bg-dark-700 p-6 rounded-lg">
-                      <div className="flex items-center justify-between mb-4">
-                        <Video className="h-8 w-8 text-secondary-400" />
-                        <span className="text-2xl font-bold text-white">
-                          {weeks.reduce((acc, week) => acc + (week.lectures?.length || 0), 0)}
-                        </span>
+
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                      <div className="flex items-center text-dark-300">
+                        <Calendar className="h-4 w-4 mr-2" />
+                        {new Date(week.startDate).toLocaleDateString()} - {new Date(week.endDate).toLocaleDateString()}
                       </div>
-                      <h3 className="text-white font-semibold">Total Lectures</h3>
-                      <p className="text-dark-300 text-sm">Video content</p>
-                    </div>
-                    <div className="bg-dark-700 p-6 rounded-lg">
-                      <div className="flex items-center justify-between mb-4">
-                        <FileText className="h-8 w-8 text-accent-400" />
-                        <span className="text-2xl font-bold text-white">
-                          {weeks.reduce((acc, week) => acc + (week.assignments?.length || 0), 0)}
-                        </span>
+                      <div className="flex items-center text-dark-300">
+                        <Video className="h-4 w-4 mr-2" />
+                        {week.lectures?.length || 0} lectures
                       </div>
-                      <h3 className="text-white font-semibold">Total Assignments</h3>
-                      <p className="text-dark-300 text-sm">Graded work</p>
+                      <div className="flex items-center text-dark-300">
+                        <FileText className="h-4 w-4 mr-2" />
+                        {week.assignments?.length || 0} assignments
+                      </div>
+                      <div className="flex items-center text-dark-300">
+                        <Users className="h-4 w-4 mr-2" />
+                        {week.isActive ? 'Available now' : 'Locked'}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Weekly Progress */}
-                  <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-white">Course Progress</h3>
-                    {weeks.map((week, index) => (
-                      <div key={week.id} className="bg-dark-700 p-6 rounded-lg">
-                        <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-primary-600 rounded-full flex items-center justify-center">
-                              <span className="text-white text-sm font-bold">{week.weekNumber}</span>
+                  {/* Week Content */}
+                  <AnimatePresence>
+                    {expandedWeeks.has(week.id) && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="p-6 space-y-6">
+                          {/* Lectures Section */}
+                          <div>
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-white flex items-center">
+                                <Video className="h-5 w-5 mr-2" />
+                                Lectures ({week.lectures?.length || 0})
+                              </h4>
                             </div>
-                            <div>
-                              <h4 className="text-white font-semibold">{week.title}</h4>
-                              <p className="text-dark-300 text-sm">{week.description}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            {week.isActive ? (
-                              <span className="px-2 py-1 bg-accent-600 text-white text-xs rounded-full">Active</span>
+
+                            {week.lectures && week.lectures.length > 0 ? (
+                              <div className="space-y-3">
+                                {week.lectures.map((lecture) => (
+                                  <div key={lecture.id} className="bg-dark-800 p-4 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-3">
+                                        <div className="w-10 h-10 bg-secondary-600 rounded-lg flex items-center justify-center">
+                                          {lecture.videoUrl ? (
+                                            <PlayCircle className="h-5 w-5 text-white" />
+                                          ) : (
+                                            <Lock className="h-5 w-5 text-white" />
+                                          )}
+                                        </div>
+                                        <div>
+                                          <h5 className="text-white font-medium">{lecture.title}</h5>
+                                          <div className="flex items-center space-x-4 text-sm text-dark-400">
+                                            <span>Order: {lecture.order}</span>
+                                            {lecture.duration && (
+                                              <span className="flex items-center">
+                                                <Clock className="h-3 w-3 mr-1" />
+                                                {lecture.duration} min
+                                              </span>
+                                            )}
+                                            <span className="flex items-center">
+                                              {lecture.isPublished ? (
+                                                <>
+                                                  <Eye className="h-3 w-3 mr-1 text-accent-400" />
+                                                  <span className="text-accent-400">Available</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <EyeOff className="h-3 w-3 mr-1 text-orange-400" />
+                                                  <span className="text-orange-400">Coming Soon</span>
+                                                </>
+                                              )}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-center space-x-2">
+                                        {lecture.isPublished && week.isActive ? (
+                                          <Button
+                                            size="sm"
+                                            onClick={() => handleLectureSelect(lecture)}
+                                            icon={<Play className="h-4 w-4" />}
+                                          >
+                                            Watch
+                                          </Button>
+                                        ) : (
+                                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">
+                                            {!week.isActive ? 'Week Locked' : 'Coming Soon'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    
+                                    {lecture.description && (
+                                      <p className="text-dark-300 text-sm mt-3">{lecture.description}</p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
                             ) : (
-                              <span className="px-2 py-1 bg-dark-600 text-dark-300 text-xs rounded-full">Upcoming</span>
-                            )}
-                          </div>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                          <div className="flex items-center text-dark-300">
-                            <Video className="h-4 w-4 mr-2" />
-                            {week.lectures?.length || 0} lectures
-                          </div>
-                          <div className="flex items-center text-dark-300">
-                            <FileText className="h-4 w-4 mr-2" />
-                            {week.assignments?.length || 0} assignments
-                          </div>
-                          <div className="flex items-center text-dark-300">
-                            <Calendar className="h-4 w-4 mr-2" />
-                            {new Date(week.startDate).toLocaleDateString()} - {new Date(week.endDate).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-
-              {activeTab === 'lectures' && (
-                <motion.div
-                  key="lectures"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="space-y-4"
-                >
-                  <h3 className="text-lg font-semibold text-white">All Lectures</h3>
-                  
-                  <div className="space-y-4">
-                    {weeks.map((week) => 
-                      week.lectures?.map((lecture, index) => (
-                        <div key={lecture.id} className="bg-dark-700 p-6 rounded-lg">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-12 h-12 bg-secondary-600 rounded-lg flex items-center justify-center">
-                                {lecture.videoUrl ? (
-                                  <PlayCircle className="h-6 w-6 text-white" />
-                                ) : (
-                                  <Lock className="h-6 w-6 text-white" />
-                                )}
-                              </div>
-                              <div>
-                                <h4 className="text-white font-semibold">{lecture.title}</h4>
-                                <p className="text-dark-300 text-sm">Week {week.weekNumber} • {lecture.duration || 0} minutes</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              {lecture.isPublished ? (
-                                <Button 
-                                  size="sm" 
-                                  onClick={() => handleLectureSelect(lecture)}
-                                  icon={<Play className="h-4 w-4" />}
-                                >
-                                  Watch
-                                </Button>
-                              ) : (
-                                <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Coming Soon</span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <p className="text-dark-300 text-sm mb-4">{lecture.description}</p>
-                          
-                          <div className="flex items-center space-x-4 text-sm text-dark-400">
-                            <span>{lecture.resources?.length || 0} resources</span>
-                            <span>{lecture.activities?.length || 0} activities</span>
-                            {lecture.videoUrl && (
-                              <div className="flex items-center">
-                                <Video className="h-4 w-4 mr-1" />
-                                Video available
+                              <div className="text-center py-8 bg-dark-800 rounded-lg">
+                                <Video className="h-12 w-12 text-dark-400 mx-auto mb-3" />
+                                <p className="text-dark-300">No lectures available yet</p>
                               </div>
                             )}
                           </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </motion.div>
-              )}
 
-              {activeTab === 'assignments' && (
-                <motion.div
-                  key="assignments"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="space-y-4"
-                >
-                  <h3 className="text-lg font-semibold text-white">All Assignments</h3>
-                  
-                  <div className="space-y-4">
-                    {weeks.map((week) => 
-                      week.assignments?.map((assignment) => (
-                        <div key={assignment.id} className="bg-dark-700 p-6 rounded-lg">
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center space-x-3">
-                              <div className="w-12 h-12 bg-accent-600 rounded-lg flex items-center justify-center">
-                                <FileText className="h-6 w-6 text-white" />
+                          {/* Assignments Section */}
+                          <div>
+                            <div className="flex items-center justify-between mb-4">
+                              <h4 className="text-lg font-semibold text-white flex items-center">
+                                <FileText className="h-5 w-5 mr-2" />
+                                Assignments ({week.assignments?.length || 0})
+                              </h4>
+                            </div>
+
+                            {week.assignments && week.assignments.length > 0 ? (
+                              <div className="space-y-3">
+                                {week.assignments.map((assignment) => (
+                                  <div key={assignment.id} className="bg-dark-800 p-4 rounded-lg">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-3">
+                                        <div className="w-10 h-10 bg-accent-600 rounded-lg flex items-center justify-center">
+                                          <Award className="h-5 w-5 text-white" />
+                                        </div>
+                                        <div>
+                                          <h5 className="text-white font-medium">{assignment.title}</h5>
+                                          <div className="flex items-center space-x-4 text-sm text-dark-400">
+                                            <span className="capitalize">{assignment.type}</span>
+                                            <span>{assignment.totalPoints} points</span>
+                                            <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
+                                            <span className="flex items-center">
+                                              {assignment.isPublished ? (
+                                                <>
+                                                  <Eye className="h-3 w-3 mr-1 text-accent-400" />
+                                                  <span className="text-accent-400">Available</span>
+                                                </>
+                                              ) : (
+                                                <>
+                                                  <EyeOff className="h-3 w-3 mr-1 text-orange-400" />
+                                                  <span className="text-orange-400">Coming Soon</span>
+                                                </>
+                                              )}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                      
+                                      <div className="flex items-center space-x-2">
+                                        {assignment.isPublished && week.isActive ? (
+                                          <Button
+                                            size="sm"
+                                            onClick={() => {
+                                              setSelectedAssignment(assignment);
+                                              setShowAssignmentModal(true);
+                                            }}
+                                            icon={<ArrowRight className="h-4 w-4" />}
+                                          >
+                                            Start
+                                          </Button>
+                                        ) : (
+                                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">
+                                            {!week.isActive ? 'Week Locked' : 'Coming Soon'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    
+                                    {assignment.description && (
+                                      <p className="text-dark-300 text-sm mt-3">{assignment.description}</p>
+                                    )}
+                                  </div>
+                                ))}
                               </div>
-                              <div>
-                                <h4 className="text-white font-semibold">{assignment.title}</h4>
-                                <p className="text-dark-300 text-sm">Week {week.weekNumber} • {assignment.type}</p>
+                            ) : (
+                              <div className="text-center py-8 bg-dark-800 rounded-lg">
+                                <FileText className="h-12 w-12 text-dark-400 mx-auto mb-3" />
+                                <p className="text-dark-300">No assignments available yet</p>
                               </div>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              {assignment.isPublished ? (
-                                <Button 
-                                  size="sm" 
-                                  onClick={() => {
-                                    setSelectedAssignment(assignment);
-                                    setShowAssignmentModal(true);
-                                  }}
-                                  icon={<ArrowRight className="h-4 w-4" />}
-                                >
-                                  Start
-                                </Button>
-                              ) : (
-                                <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">Coming Soon</span>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <p className="text-dark-300 text-sm mb-4">{assignment.description}</p>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm text-dark-400">
-                            <div className="flex items-center">
-                              <Award className="h-4 w-4 mr-1" />
-                              {assignment.totalPoints} points
-                            </div>
-                            <div className="flex items-center">
-                              <Clock className="h-4 w-4 mr-1" />
-                              Due {new Date(assignment.dueDate).toLocaleDateString()}
-                            </div>
-                            <div className="flex items-center">
-                              <FileText className="h-4 w-4 mr-1" />
-                              {assignment.questions?.length || 0} questions
-                            </div>
-                            <div className="flex items-center">
-                              <Activity className="h-4 w-4 mr-1" />
-                              {assignment.attempts} attempts
-                            </div>
+                            )}
                           </div>
                         </div>
-                      ))
+                      </motion.div>
                     )}
-                  </div>
+                  </AnimatePresence>
                 </motion.div>
-              )}
-            </AnimatePresence>
-          </Card>
-        </>
+              ))}
+            </div>
+          )}
+        </Card>
       )}
 
       {/* Assignment Modal */}
