@@ -13,7 +13,8 @@ import {
   RotateCcw,
   Home,
   Target,
-  TrendingUp
+  TrendingUp,
+  Play
 } from 'lucide-react';
 import Button from '../UI/Button';
 import { Quiz, QuizAttempt, Question } from '../../types/quiz';
@@ -27,6 +28,7 @@ interface QuizInterfaceProps {
   currentAttempt: QuizAttempt | null;
   onRetake?: () => void;
   onGoBack?: () => void;
+  onContinueToNextContent?: () => void; // New prop for continuing to next content
 }
 
 const QuizInterface: React.FC<QuizInterfaceProps> = ({
@@ -37,7 +39,8 @@ const QuizInterface: React.FC<QuizInterfaceProps> = ({
   isLoading,
   currentAttempt,
   onRetake,
-  onGoBack
+  onGoBack,
+  onContinueToNextContent
 }) => {
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [timeRemaining, setTimeRemaining] = useState<number | null>(null);
@@ -172,9 +175,6 @@ const QuizInterface: React.FC<QuizInterfaceProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div className="flex items-center space-x-4">
-              <Button variant="ghost" onClick={onGoBack || onCancel} icon={<ArrowLeft className="h-4 w-4" />}>
-                Back to Lecture
-              </Button>
               <h1 className="text-2xl font-bold text-white">Quiz Results</h1>
             </div>
             <Button variant="ghost" onClick={onCancel} icon={<X className="h-4 w-4" />} />
@@ -219,16 +219,28 @@ const QuizInterface: React.FC<QuizInterfaceProps> = ({
               </div>
 
               <div className="flex justify-center space-x-4">
-                <Button onClick={onGoBack || onCancel} icon={<Home className="h-4 w-4" />}>
+                <Button onClick={onGoBack || onCancel} icon={<ArrowLeft className="h-4 w-4" />}>
                   Back to Lecture
                 </Button>
-                <Button 
-                  variant="outline" 
-                  onClick={handleRetake}
-                  icon={<RotateCcw className="h-4 w-4" />}
-                >
-                  Retake Quiz
-                </Button>
+                
+                {!quizResult.passed && (
+                  <Button 
+                    variant="outline" 
+                    onClick={handleRetake}
+                    icon={<RotateCcw className="h-4 w-4" />}
+                  >
+                    Retake Quiz
+                  </Button>
+                )}
+
+                {quizResult.passed && onContinueToNextContent && (
+                  <Button 
+                    onClick={onContinueToNextContent}
+                    icon={<ArrowRight className="h-4 w-4" />}
+                  >
+                    Continue to Next Content
+                  </Button>
+                )}
               </div>
             </div>
 
