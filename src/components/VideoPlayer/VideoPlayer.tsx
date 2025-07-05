@@ -11,8 +11,7 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
-  ExternalLink,
-  Settings
+  ExternalLink
 } from 'lucide-react';
 import Button from '../UI/Button';
 import Card from '../UI/Card';
@@ -58,8 +57,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [videoDuration, setVideoDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [embedError, setEmbedError] = useState(false);
-  const [showQuizSettings, setShowQuizSettings] = useState(false);
-  const [quizRequiresVideo, setQuizRequiresVideo] = useState(requireVideoCompletion);
   const playerRef = useRef<any>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -79,10 +76,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       loadQuizAttempts();
     }
   }, [user, lectureId]);
-
-  useEffect(() => {
-    setQuizRequiresVideo(requireVideoCompletion);
-  }, [requireVideoCompletion]);
 
   useEffect(() => {
     return () => {
@@ -217,7 +210,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     toast.success('Video completed! 🎉');
 
     // Show quiz if available and auto-show is enabled
-    if (quiz && quiz.questions.length > 0 && !quizRequiresVideo) {
+    if (quiz && quiz.questions.length > 0 && !requireVideoCompletion) {
       setTimeout(() => {
         setShowQuiz(true);
       }, 1000);
@@ -306,12 +299,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     // Don't close the quiz, just reset the attempt
   };
 
-  const handleContinueToNextContent = () => {
-    // Close quiz and stay on the video player page
-    setShowQuiz(false);
-    toast.success('Great job! You can continue exploring the course content.');
-  };
-
   const openVideoInNewTab = () => {
     window.open(videoUrl, '_blank');
   };
@@ -382,7 +369,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   }
 
   const quizStatus = getQuizStatus();
-  const canAccessQuiz = !quizRequiresVideo || isVideoCompleted || isInstructor;
+  const canAccessQuiz = !requireVideoCompletion || isVideoCompleted || isInstructor;
 
   return (
     <div className="space-y-6">
@@ -493,21 +480,13 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               {quiz.title}
             </h3>
             <div className="flex items-center space-x-2">
-              {isInstructor && (
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => setShowQuizSettings(!showQuizSettings)}
-                  icon={<Settings className="h-4 w-4" />}
-                />
-              )}
               {quizStatus.hasPassed && (
                 <div className="flex items-center text-accent-400 text-sm">
                   <CheckCircle className="h-4 w-4 mr-1" />
                   Passed
                 </div>
               )}
-              {quizRequiresVideo && !isVideoCompleted && !isInstructor && (
+              {requireVideoCompletion && !isVideoCompleted && !isInstructor && (
                 <div className="flex items-center text-orange-400 text-sm">
                   <Eye className="h-4 w-4 mr-1" />
                   Locked
@@ -515,39 +494,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               )}
             </div>
           </div>
-
-          {/* Quiz Settings (Instructor Only) */}
-          {isInstructor && showQuizSettings && (
-            <div className="mb-6 p-4 bg-dark-700 rounded-lg">
-              <h4 className="text-white font-medium mb-3">Quiz Access Settings</h4>
-              <label className="flex items-center">
-                <input
-                  type="checkbox"
-                  checked={quizRequiresVideo}
-                  onChange={(e) => setQuizRequiresVideo(e.target.checked)}
-                  className="mr-3 rounded border-dark-600 bg-dark-700 text-primary-600 focus:ring-primary-500"
-                />
-                <div className="flex items-center">
-                  {quizRequiresVideo ? (
-                    <Eye className="h-4 w-4 mr-2 text-orange-400" />
-                  ) : (
-                    <EyeOff className="h-4 w-4 mr-2 text-accent-400" />
-                  )}
-                  <div>
-                    <span className="text-white font-medium">
-                      {quizRequiresVideo ? 'Require Video Completion' : 'Allow Immediate Access'}
-                    </span>
-                    <p className="text-dark-300 text-sm">
-                      {quizRequiresVideo 
-                        ? 'Students must complete the video before accessing the quiz'
-                        : 'Students can access the quiz immediately'
-                      }
-                    </p>
-                  </div>
-                </div>
-              </label>
-            </div>
-          )}
 
           {quiz.description && (
             <p className="text-dark-300 mb-4">{quiz.description}</p>
@@ -648,7 +594,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             currentAttempt={currentAttempt}
             onRetake={handleQuizRetake}
             onGoBack={() => setShowQuiz(false)}
-            onContinueToNextContent={handleContinueToNextContent}
           />
         )}
       </AnimatePresence>
