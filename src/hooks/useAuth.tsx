@@ -4,9 +4,7 @@ import {
   signIn as authSignIn, 
   signUp as authSignUp, 
   signOut as authSignOut, 
-  onAuthStateChange,
-  resendVerificationEmail as authResendVerification,
-  checkEmailVerification as authCheckVerification
+  onAuthStateChange
 } from '../services/auth';
 
 interface AuthContextType {
@@ -15,8 +13,6 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string, displayName: string, role?: 'admin' | 'student') => Promise<{ needsVerification: boolean }>;
   signOut: () => Promise<void>;
-  resendVerificationEmail: () => Promise<void>;
-  checkEmailVerification: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -52,7 +48,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setLoading(true);
     try {
       const result = await authSignUp(email, password, displayName, role);
-      // Don't set user here since they need to verify email first
+      // Set user immediately since no verification is needed
+      setUser(result.user);
       return { needsVerification: result.needsVerification };
     } catch (error) {
       console.error('Sign up error:', error);
@@ -75,33 +72,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  const resendVerificationEmail = async () => {
-    try {
-      await authResendVerification();
-    } catch (error) {
-      console.error('Resend verification error:', error);
-      throw error;
-    }
-  };
-
-  const checkEmailVerification = async () => {
-    try {
-      return await authCheckVerification();
-    } catch (error) {
-      console.error('Check verification error:', error);
-      return false;
-    }
-  };
-
   return (
     <AuthContext.Provider value={{ 
       user, 
       loading, 
       signIn, 
       signUp, 
-      signOut, 
-      resendVerificationEmail,
-      checkEmailVerification
+      signOut
     }}>
       {children}
     </AuthContext.Provider>

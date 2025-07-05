@@ -45,12 +45,32 @@ export const createCourse = async (course: Omit<Course, 'id'>): Promise<string> 
 export const getCourses = async (): Promise<Course[]> => {
   try {
     const querySnapshot = await getDocs(collection(db, 'courses'));
-    return querySnapshot.docs.map(doc => ({
+    const courses = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       createdAt: convertTimestamp(doc.data().createdAt),
       updatedAt: convertTimestamp(doc.data().updatedAt)
     })) as Course[];
+
+    // If no courses exist, create a default one
+    if (courses.length === 0) {
+      const defaultCourse = {
+        title: 'Advanced Mathematics',
+        description: 'Comprehensive mathematics course covering calculus, algebra, and statistics',
+        weeks: [],
+        createdBy: 'system',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      const courseId = await createCourse(defaultCourse);
+      return [{
+        id: courseId,
+        ...defaultCourse
+      }];
+    }
+
+    return courses;
   } catch (error) {
     console.error('Error fetching courses:', error);
     throw new Error('Failed to fetch courses');

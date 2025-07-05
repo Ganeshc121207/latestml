@@ -4,7 +4,6 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './hooks/useAuth';
 import AuthForm from './components/Shared/AuthForm';
 import Navigation from './components/Shared/Navigation';
-import EmailVerificationBanner from './components/Shared/EmailVerificationBanner';
 import AdminDashboard from './components/Admin/Dashboard';
 import ContentManager from './components/Admin/ContentManager';
 import StudentDashboard from './components/Student/Dashboard';
@@ -60,9 +59,6 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-dark-900">
-      {/* Email Verification Banner */}
-      <EmailVerificationBanner user={user} />
-      
       <Navigation currentView={currentView} onViewChange={setCurrentView} />
       
       <div className="lg:pl-64">
