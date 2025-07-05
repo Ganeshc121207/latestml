@@ -132,19 +132,22 @@ export const createWeek = async (courseId: string, week: Omit<Week, 'id' | 'cour
 
 export const getWeeks = async (courseId: string): Promise<Week[]> => {
   try {
+    // Use only the where clause to avoid composite index requirement
     const q = query(
       collection(db, 'weeks'), 
-      where('courseId', '==', courseId),
-      orderBy('weekNumber', 'asc')
+      where('courseId', '==', courseId)
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
+    const weeks = querySnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data(),
       lectures: doc.data().lectures || [],
       assignments: doc.data().assignments || []
     })) as Week[];
+
+    // Sort by weekNumber in JavaScript instead of Firestore
+    return weeks.sort((a, b) => (a.weekNumber || 0) - (b.weekNumber || 0));
   } catch (error) {
     console.error('Error fetching weeks:', error);
     throw new Error('Failed to fetch weeks');
