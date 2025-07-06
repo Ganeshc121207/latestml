@@ -115,19 +115,23 @@ export const saveQuizAttempt = async (attempt: QuizAttempt): Promise<void> => {
 
 export const getQuizAttempts = async (userId: string, lectureId: string): Promise<QuizAttempt[]> => {
   try {
+    // Modified query to avoid composite index requirement
+    // First query by userId and lectureId, then sort in memory
     const q = query(
       collection(db, 'quiz_attempts'),
       where('userId', '==', userId),
-      where('lectureId', '==', lectureId),
-      orderBy('startedAt', 'desc')
+      where('lectureId', '==', lectureId)
     );
     const querySnapshot = await getDocs(q);
     
-    return querySnapshot.docs.map(doc => ({
+    const attempts = querySnapshot.docs.map(doc => ({
       ...doc.data(),
       startedAt: convertTimestamp(doc.data().startedAt),
       completedAt: convertTimestamp(doc.data().completedAt)
     })) as QuizAttempt[];
+    
+    // Sort by startedAt in descending order (most recent first)
+    return attempts.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
   } catch (error) {
     console.error('Error fetching quiz attempts:', error);
     return [];
