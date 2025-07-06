@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import YouTube, { YouTubeProps } from 'react-youtube';
-import { 
-  Play, 
-  Pause, 
-  CheckCircle, 
-  Clock, 
-  AlertCircle, 
+import {
+  Play,
+  Pause,
+  CheckCircle,
+  Clock,
+  AlertCircle,
   Award,
   RefreshCw,
   Eye,
@@ -91,7 +91,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Load the latest quiz data when component mounts or lectureId changes
   const loadLatestQuiz = async () => {
     if (!lectureId) return;
-    
+
     setQuizLoading(true);
     try {
       const latestQuiz = await getQuiz(lectureId);
@@ -125,11 +125,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const loadQuizAttempts = async () => {
     if (!user) return;
-    
+
     try {
       const attempts = await getQuizAttempts(user.uid, lectureId);
       setQuizAttempts(attempts);
-      
+
       // Check if video was previously completed
       const hasCompletedAttempt = attempts.some(attempt => attempt.videoCompleted);
       if (hasCompletedAttempt) {
@@ -149,7 +149,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const onPlayerStateChange: YouTubeProps['onStateChange'] = (event) => {
     const player = event.target;
-    
+
     if (event.data === 1) { // Playing
       startProgressTracking();
     } else if (event.data === 2) { // Paused
@@ -161,6 +161,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const onPlayerError = (error: any) => {
     console.error('YouTube player error:', error);
+    // Specifically check for the common "refused to connect" type of error.
+    // Error code 5 (invalid parameter) or 101/150 (embed not allowed) are common here.
+    // Although your current message is already good.
     setEmbedError(true);
     setError('This video cannot be embedded. You can watch it directly on YouTube.');
   };
@@ -175,7 +178,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
         const current = playerRef.current.getCurrentTime();
         const duration = playerRef.current.getDuration();
         const progress = (current / duration) * 100;
-        
+
         setCurrentTime(current);
         setVideoProgress(progress);
 
@@ -224,11 +227,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     setIsVideoCompleted(true);
     stopProgressTracking();
-    
+
     if (user) {
       await saveVideoProgressData(100, videoDuration, videoDuration);
     }
-    
+
     onVideoComplete?.();
     toast.success('Video completed! 🎉');
 
@@ -264,7 +267,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!currentAttempt || !quiz || !user) return;
 
     setIsLoading(true);
-    
+
     try {
       // Calculate score
       let correctAnswers = 0;
@@ -301,9 +304,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       await saveQuizAttempt(completedAttempt);
       setQuizAttempts(prev => [...prev, completedAttempt]);
       setCurrentAttempt(null);
-      
+
       onQuizComplete?.(score, passed);
-      
+
       if (passed) {
         toast.success(`Quiz passed with ${score}%! 🎉`);
       } else {
@@ -336,7 +339,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const getQuizStatus = () => {
     const passedAttempts = quizAttempts.filter(attempt => attempt.passed);
     const bestScore = Math.max(...quizAttempts.map(attempt => attempt.score), 0);
-    
+
     return {
       hasAttempts: quizAttempts.length > 0,
       hasPassed: passedAttempts.length > 0,
@@ -354,8 +357,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       controls: 1,
       rel: 0,
       showinfo: 0,
-      modestbranding: 1,
-      origin: window.location.origin,
+      // Removed modestbranding as it can sometimes cause issues with origin restrictions.
+      // If it's crucial for your UI, you might need to test with it re-enabled
+      // after confirming the origin fix.
+      // modestbranding: 1,
+      origin: window.location.origin, // This is crucial for security and embedding
     },
   };
 
@@ -421,7 +427,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                 onError={onPlayerError}
                 className="absolute inset-0 w-full h-full"
               />
-              
+
               {/* Video Progress Overlay */}
               {playerReady && !embedError && (
                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4">
@@ -430,7 +436,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                     <span>{formatTime(videoDuration)}</span>
                   </div>
                   <div className="w-full bg-dark-600 rounded-full h-1">
-                    <div 
+                    <div
                       className="bg-primary-600 h-1 rounded-full transition-all duration-300"
                       style={{ width: `${videoProgress}%` }}
                     />
@@ -459,7 +465,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
           {description && (
             <p className="text-dark-300 mb-4">{description}</p>
           )}
-          
+
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4 text-sm text-dark-400">
               <div className="flex items-center">
@@ -482,9 +488,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </div>
 
             {embedError && (
-              <Button 
-                size="sm" 
-                variant="outline" 
+              <Button
+                size="sm"
+                variant="outline"
                 onClick={openVideoInNewTab}
                 icon={<ExternalLink className="h-4 w-4" />}
               >
@@ -566,7 +572,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   </div>
                 </div>
               ) : (
-                <Button 
+                <Button
                   onClick={() => setShowQuiz(true)}
                   disabled={currentAttempt !== null || quizLoading}
                   className="w-full"
