@@ -17,14 +17,27 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  Users
+  Users,
+  AlertTriangle
 } from 'lucide-react';
 import Card from '../UI/Card';
 import Button from '../UI/Button';
 import Modal from '../UI/Modal';
 import LectureViewer from './LectureViewer';
-import { Course, Week, Lecture, Assignment } from '../../types';
+import AssignmentInterface from './AssignmentInterface';
+import { Course, Week, Lecture } from '../../types';
+import { Assignment, AssignmentSubmission, AssignmentResult } from '../../types/assignment';
 import { getCourses, getWeeks, updateStudentProgress } from '../../services/database';
+import { 
+  getWeekAssignments, 
+  getLatestSubmission, 
+  saveAssignmentSubmission, 
+  autoGradeSubmission,
+  calculateAssignmentResult,
+  canSubmitAssignment,
+  isAssignmentOverdue,
+  getTimeRemaining
+} from '../../services/assignmentService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 
@@ -33,12 +46,16 @@ const CoursesView: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [weeks, setWeeks] = useState<Week[]>([]);
+  const [weekAssignments, setWeekAssignments] = useState<Record<string, Assignment[]>>({});
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
   const [selectedLecture, setSelectedLecture] = useState<Lecture | null>(null);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [assignmentSubmissions, setAssignmentSubmissions] = useState<Record<string, AssignmentSubmission | null>>({});
+  const [assignmentResults, setAssignmentResults] = useState<Record<string, AssignmentResult | null>>({});
   const [loading, setLoading] = useState(true);
   const [showLectureViewer, setShowLectureViewer] = useState(false);
-  const [showAssignmentModal, setShowAssignmentModal] = useState(false);
+  const [showAssignmentInterface, setShowAssignmentInterface] = useState(false);
+  const [assignmentLoading, setAssignmentLoading] = useState(false);
 
   useEffect(() => {
     fetchCourses();
@@ -49,6 +66,13 @@ const CoursesView: React.FC = () => {
       fetchWeeks(selectedCourse.id);
     }
   }, [selectedCourse]);
+
+  useEffect(() => {
+    // Fetch assignments for all weeks
+    weeks.forEach(week => {
+      fetchWeekAssignments(week.id);
+    });
+  }, [weeks]);
 
   const fetchCourses = async () => {
     try {
@@ -70,6 +94,39 @@ const CoursesView: React.FC = () => {
       setWeeks(weeksData);
     } catch (error) {
       toast.error('Failed to fetch course content');
+    }
+  };
+
+  const fetchWeekAssignments = async (weekId: string) => {
+    try {
+      const assignments = await getWeekAssignments(weekId);
+      const publishedAssignments = assignments.filter(a => a.isPublished);
+      setWeekAssignments(prev => ({
+        ...prev,
+        [weekId]: publishedAssignments
+      }));
+
+      // Fetch submissions for each assignment
+      if (user) {
+        for (const assignment of publishedAssignments) {
+          const submission = await getLatestSubmission(user.uid, assignment.id);
+          setAssignmentSubmissions(prev => ({
+            ...prev,
+            [assignment.id]: submission
+          }));
+
+          // Calculate result if submission exists
+          if (submission) {
+            const result = await calculateAssignmentResult(submission, assignment);
+            setAssignmentResults(prev => ({
+              ...prev,
+              [assignment.id]: result
+            }));
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch week assignments:', error);
     }
   };
 
@@ -103,18 +160,81 @@ const CoursesView: React.FC = () => {
     }
   };
 
-  const handleAssignmentSubmit = async (assignmentId: string) => {
-    if (!user || !selectedCourse) return;
+  const handleAssignmentSelect = (assignment: Assignment) => {
+    setSelectedAssignment(assignment);
+    setShowAssignmentInterface(true);
+  };
+
+  const handleAssignmentStart = () => {
+    // Assignment started - no additional action needed
+  };
+
+  const handleAssignmentSubmit = async (answers: Record<string, any>) => {
+    if (!user || !selectedAssignment) return;
+
+    setAssignmentLoading(true);
     
     try {
-      await updateStudentProgress(user.uid, selectedCourse.id, {
-        completedAssignments: [assignmentId],
+      const now = new Date();
+      const dueDate = new Date(selectedAssignment.dueDate);
+      const isLate = now > dueDate;
+
+      const submission: AssignmentSubmission = {
+        id: Math.random().toString(36).substr(2, 9),
+        userId: user.uid,
+        assignmentId: selectedAssignment.id,
+        answers,
+        submittedAt: now.toISOString(),
+        isLate,
+        autoGraded: true,
+        timeSpent: 0 // This would be calculated based on start time
+      };
+
+      // Auto-grade the submission
+      const score = await autoGradeSubmission(submission, selectedAssignment);
+      submission.score = score;
+
+      await saveAssignmentSubmission(submission);
+      
+      // Update local state
+      setAssignmentSubmissions(prev => ({
+        ...prev,
+        [selectedAssignment.id]: submission
+      }));
+
+      // Calculate and store result
+      const result = await calculateAssignmentResult(submission, selectedAssignment);
+      setAssignmentResults(prev => ({
+        ...prev,
+        [selectedAssignment.id]: result
+      }));
+
+      // Update student progress
+      await updateStudentProgress(user.uid, selectedCourse?.id || '', {
+        completedAssignments: [selectedAssignment.id],
         lastAccessed: new Date().toISOString()
       });
-      toast.success('Assignment submitted!');
-      setShowAssignmentModal(false);
+
+      toast.success('Assignment submitted successfully!');
     } catch (error) {
       toast.error('Failed to submit assignment');
+      console.error('Assignment submission error:', error);
+    } finally {
+      setAssignmentLoading(false);
+    }
+  };
+
+  const handleAssignmentRetake = () => {
+    // Reset assignment state for retake
+    if (selectedAssignment) {
+      setAssignmentSubmissions(prev => ({
+        ...prev,
+        [selectedAssignment.id]: null
+      }));
+      setAssignmentResults(prev => ({
+        ...prev,
+        [selectedAssignment.id]: null
+      }));
     }
   };
 
@@ -135,6 +255,34 @@ const CoursesView: React.FC = () => {
           setSelectedLecture(null);
         }}
         onComplete={handleLectureComplete}
+      />
+    );
+  }
+
+  if (showAssignmentInterface && selectedAssignment) {
+    const latestSubmission = assignmentSubmissions[selectedAssignment.id];
+    const assignmentResult = assignmentResults[selectedAssignment.id];
+    const submissions = latestSubmission ? [latestSubmission] : [];
+    const canSubmit = canSubmitAssignment(selectedAssignment, submissions);
+
+    return (
+      <AssignmentInterface
+        assignment={selectedAssignment}
+        onSubmit={handleAssignmentSubmit}
+        onCancel={() => {
+          setShowAssignmentInterface(false);
+          setSelectedAssignment(null);
+        }}
+        onStart={handleAssignmentStart}
+        isLoading={assignmentLoading}
+        latestSubmission={latestSubmission}
+        assignmentResult={assignmentResult}
+        canSubmit={canSubmit}
+        onRetake={handleAssignmentRetake}
+        onGoBack={() => {
+          setShowAssignmentInterface(false);
+          setSelectedAssignment(null);
+        }}
       />
     );
   }
@@ -186,7 +334,7 @@ const CoursesView: React.FC = () => {
               <span>•</span>
               <span>{weeks.reduce((acc, week) => acc + (week.lectures?.length || 0), 0)} lectures</span>
               <span>•</span>
-              <span>{weeks.reduce((acc, week) => acc + (week.assignments?.length || 0), 0)} assignments</span>
+              <span>{Object.values(weekAssignments).reduce((acc, assignments) => acc + assignments.length, 0)} assignments</span>
             </div>
           </div>
 
@@ -248,7 +396,7 @@ const CoursesView: React.FC = () => {
                       </div>
                       <div className="flex items-center text-dark-300">
                         <FileText className="h-4 w-4 mr-2" />
-                        {week.assignments?.length || 0} assignments
+                        {weekAssignments[week.id]?.length || 0} assignments
                       </div>
                       <div className="flex items-center text-dark-300">
                         <Users className="h-4 w-4 mr-2" />
@@ -353,67 +501,103 @@ const CoursesView: React.FC = () => {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-white flex items-center">
                                 <FileText className="h-5 w-5 mr-2" />
-                                Assignments ({week.assignments?.length || 0})
+                                Assignments ({weekAssignments[week.id]?.length || 0})
                               </h4>
                             </div>
 
-                            {week.assignments && week.assignments.length > 0 ? (
+                            {weekAssignments[week.id] && weekAssignments[week.id].length > 0 ? (
                               <div className="space-y-3">
-                                {week.assignments.map((assignment) => (
-                                  <div key={assignment.id} className="bg-dark-800 p-4 rounded-lg">
-                                    <div className="flex items-center justify-between">
-                                      <div className="flex items-center space-x-3">
-                                        <div className="w-10 h-10 bg-accent-600 rounded-lg flex items-center justify-center">
-                                          <Award className="h-5 w-5 text-white" />
-                                        </div>
-                                        <div>
-                                          <h5 className="text-white font-medium">{assignment.title}</h5>
-                                          <div className="flex items-center space-x-4 text-sm text-dark-400">
-                                            <span className="capitalize">{assignment.type}</span>
-                                            <span>{assignment.totalPoints} points</span>
-                                            <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
-                                            <span className="flex items-center">
-                                              {assignment.isPublished ? (
-                                                <>
-                                                  <Eye className="h-3 w-3 mr-1 text-accent-400" />
-                                                  <span className="text-accent-400">Available</span>
-                                                </>
-                                              ) : (
-                                                <>
-                                                  <EyeOff className="h-3 w-3 mr-1 text-orange-400" />
-                                                  <span className="text-orange-400">Coming Soon</span>
-                                                </>
-                                              )}
-                                            </span>
+                                {weekAssignments[week.id].map((assignment) => {
+                                  const submission = assignmentSubmissions[assignment.id];
+                                  const result = assignmentResults[assignment.id];
+                                  const isOverdue = isAssignmentOverdue(assignment);
+                                  const timeLeft = getTimeRemaining(assignment.dueDate);
+                                  const submissions = submission ? [submission] : [];
+                                  const canSubmit = canSubmitAssignment(assignment, submissions);
+
+                                  return (
+                                    <div key={assignment.id} className="bg-dark-800 p-4 rounded-lg">
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center space-x-3">
+                                          <div className="w-10 h-10 bg-accent-600 rounded-lg flex items-center justify-center">
+                                            {submission ? (
+                                              <CheckCircle className="h-5 w-5 text-white" />
+                                            ) : (
+                                              <Award className="h-5 w-5 text-white" />
+                                            )}
                                           </div>
+                                          <div>
+                                            <h5 className="text-white font-medium">{assignment.title}</h5>
+                                            <div className="flex items-center space-x-4 text-sm text-dark-400">
+                                              <span>{assignment.totalPoints} points</span>
+                                              <span className={`flex items-center ${isOverdue ? 'text-red-400' : 'text-dark-400'}`}>
+                                                <Clock className="h-3 w-3 mr-1" />
+                                                {timeLeft}
+                                              </span>
+                                              {submission && (
+                                                <span className="text-accent-400">
+                                                  Score: {submission.score}%
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="flex items-center space-x-2">
+                                          {week.isActive ? (
+                                            <>
+                                              {submission ? (
+                                                <div className="flex items-center space-x-2">
+                                                  <Button
+                                                    size="sm"
+                                                    variant="outline"
+                                                    onClick={() => handleAssignmentSelect(assignment)}
+                                                    icon={<Eye className="h-4 w-4" />}
+                                                  >
+                                                    View Results
+                                                  </Button>
+                                                  {canSubmit && (
+                                                    <Button
+                                                      size="sm"
+                                                      onClick={() => handleAssignmentSelect(assignment)}
+                                                      icon={<ArrowRight className="h-4 w-4" />}
+                                                    >
+                                                      Retake
+                                                    </Button>
+                                                  )}
+                                                </div>
+                                              ) : (
+                                                <Button
+                                                  size="sm"
+                                                  onClick={() => handleAssignmentSelect(assignment)}
+                                                  icon={<ArrowRight className="h-4 w-4" />}
+                                                  disabled={!canSubmit}
+                                                >
+                                                  {canSubmit ? 'Start' : 'Unavailable'}
+                                                </Button>
+                                              )}
+                                            </>
+                                          ) : (
+                                            <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">
+                                              Week Locked
+                                            </span>
+                                          )}
                                         </div>
                                       </div>
                                       
-                                      <div className="flex items-center space-x-2">
-                                        {assignment.isPublished && week.isActive ? (
-                                          <Button
-                                            size="sm"
-                                            onClick={() => {
-                                              setSelectedAssignment(assignment);
-                                              setShowAssignmentModal(true);
-                                            }}
-                                            icon={<ArrowRight className="h-4 w-4" />}
-                                          >
-                                            Start
-                                          </Button>
-                                        ) : (
-                                          <span className="px-2 py-1 bg-orange-600 text-white text-xs rounded-full">
-                                            {!week.isActive ? 'Week Locked' : 'Coming Soon'}
-                                          </span>
-                                        )}
-                                      </div>
+                                      {assignment.description && (
+                                        <p className="text-dark-300 text-sm mt-3">{assignment.description}</p>
+                                      )}
+
+                                      {isOverdue && !submission && (
+                                        <div className="mt-3 flex items-center text-red-400 text-sm">
+                                          <AlertTriangle className="h-4 w-4 mr-1" />
+                                          This assignment is overdue
+                                        </div>
+                                      )}
                                     </div>
-                                    
-                                    {assignment.description && (
-                                      <p className="text-dark-300 text-sm mt-3">{assignment.description}</p>
-                                    )}
-                                  </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                             ) : (
                               <div className="text-center py-8 bg-dark-800 rounded-lg">
@@ -432,69 +616,6 @@ const CoursesView: React.FC = () => {
           )}
         </Card>
       )}
-
-      {/* Assignment Modal */}
-      <Modal 
-        isOpen={showAssignmentModal} 
-        onClose={() => setShowAssignmentModal(false)} 
-        title={selectedAssignment?.title || 'Assignment'}
-        maxWidth="2xl"
-      >
-        {selectedAssignment && (
-          <div className="space-y-6">
-            <div>
-              <h3 className="text-lg font-semibold text-white mb-2">{selectedAssignment.title}</h3>
-              <p className="text-dark-300 mb-4">{selectedAssignment.description}</p>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm text-dark-400 mb-6">
-                <div className="flex items-center">
-                  <Award className="h-4 w-4 mr-1" />
-                  {selectedAssignment.totalPoints} points
-                </div>
-                <div className="flex items-center">
-                  <Clock className="h-4 w-4 mr-1" />
-                  Due {new Date(selectedAssignment.dueDate).toLocaleDateString()}
-                </div>
-                <div className="flex items-center">
-                  <FileText className="h-4 w-4 mr-1" />
-                  {selectedAssignment.questions?.length || 0} questions
-                </div>
-                <div className="flex items-center">
-                  <Activity className="h-4 w-4 mr-1" />
-                  {selectedAssignment.attempts} attempts
-                </div>
-              </div>
-            </div>
-            
-            <div className="bg-dark-700 p-6 rounded-lg">
-              <h4 className="text-white font-semibold mb-4">Assignment Instructions</h4>
-              <p className="text-dark-300 mb-4">
-                This is a {selectedAssignment.type} assignment. Please read all questions carefully and submit your answers before the due date.
-              </p>
-              
-              {selectedAssignment.timeLimit && selectedAssignment.timeLimit > 0 && (
-                <div className="bg-orange-600/10 border border-orange-600/20 p-4 rounded-lg mb-4">
-                  <div className="flex items-center">
-                    <Clock className="h-5 w-5 text-orange-400 mr-2" />
-                    <span className="text-orange-400 font-medium">
-                      Time Limit: {selectedAssignment.timeLimit} minutes
-                    </span>
-                  </div>
-                </div>
-              )}
-            </div>
-            
-            <div className="flex justify-end space-x-3">
-              <Button variant="ghost" onClick={() => setShowAssignmentModal(false)}>
-                Cancel
-              </Button>
-              <Button onClick={() => handleAssignmentSubmit(selectedAssignment.id)}>
-                Start Assignment
-              </Button>
-            </div>
-          </div>
-        )}
-      </Modal>
     </div>
   );
 };

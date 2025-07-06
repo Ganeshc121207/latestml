@@ -24,7 +24,9 @@ import Button from '../UI/Button';
 import Card from '../UI/Card';
 import Modal from '../UI/Modal';
 import LectureEditor from './LectureEditor';
-import { Course, Week, Lecture, Assignment } from '../../types';
+import AssignmentBuilder from './AssignmentBuilder';
+import { Course, Week, Lecture } from '../../types';
+import { Assignment } from '../../types/assignment';
 import { 
   getCourses, 
   createCourse,
@@ -36,11 +38,13 @@ import {
   deleteWeek,
   createLecture,
   updateLecture,
-  deleteLecture,
-  createAssignment,
-  updateAssignment,
-  deleteAssignment
+  deleteLecture
 } from '../../services/database';
+import { 
+  saveAssignment,
+  getWeekAssignments,
+  deleteAssignment
+} from '../../services/assignmentService';
 import { useAuth } from '../../hooks/useAuth';
 import toast from 'react-hot-toast';
 
@@ -49,6 +53,7 @@ const ContentManager: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [weeks, setWeeks] = useState<Week[]>([]);
+  const [weekAssignments, setWeekAssignments] = useState<Record<string, Assignment[]>>({});
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   
@@ -75,6 +80,13 @@ const ContentManager: React.FC = () => {
     }
   }, [selectedCourse]);
 
+  useEffect(() => {
+    // Fetch assignments for all weeks
+    weeks.forEach(week => {
+      fetchWeekAssignments(week.id);
+    });
+  }, [weeks]);
+
   const fetchCourses = async () => {
     try {
       const coursesData = await getCourses();
@@ -95,6 +107,18 @@ const ContentManager: React.FC = () => {
       setWeeks(weeksData);
     } catch (error) {
       toast.error('Failed to fetch weeks');
+    }
+  };
+
+  const fetchWeekAssignments = async (weekId: string) => {
+    try {
+      const assignments = await getWeekAssignments(weekId);
+      setWeekAssignments(prev => ({
+        ...prev,
+        [weekId]: assignments
+      }));
+    } catch (error) {
+      console.error('Failed to fetch week assignments:', error);
     }
   };
 
@@ -259,32 +283,27 @@ const ContentManager: React.FC = () => {
     setShowAssignmentModal(true);
   };
 
-  const handleSaveAssignment = async (assignmentData: Partial<Assignment>) => {
-    if (!selectedCourse) return;
-
+  const handleSaveAssignment = async (assignmentData: Assignment) => {
     try {
-      if (editingAssignment) {
-        await updateAssignment(selectedCourse.id, selectedWeekId, editingAssignment.id, assignmentData);
-        toast.success('Assignment updated successfully!');
-      } else {
-        await createAssignment(selectedCourse.id, selectedWeekId, assignmentData as Omit<Assignment, 'id' | 'weekId'>);
-        toast.success('Assignment created successfully!');
-      }
-      
-      await fetchWeeks(selectedCourse.id);
+      await saveAssignment(selectedWeekId, assignmentData);
+      await fetchWeekAssignments(selectedWeekId);
       setShowAssignmentModal(false);
       setEditingAssignment(null);
+      toast.success('Assignment saved successfully!');
     } catch (error) {
       toast.error('Failed to save assignment');
     }
   };
 
-  const handleDeleteAssignment = async (weekId: string, assignmentId: string) => {
-    if (!selectedCourse || !confirm('Are you sure you want to delete this assignment?')) return;
+  const handleDeleteAssignment = async (assignmentId: string) => {
+    if (!confirm('Are you sure you want to delete this assignment?')) return;
 
     try {
-      await deleteAssignment(selectedCourse.id, weekId, assignmentId);
-      await fetchWeeks(selectedCourse.id);
+      await deleteAssignment(assignmentId);
+      // Refresh assignments for all weeks
+      weeks.forEach(week => {
+        fetchWeekAssignments(week.id);
+      });
       toast.success('Assignment deleted successfully!');
     } catch (error) {
       toast.error('Failed to delete assignment');
@@ -387,7 +406,7 @@ const ContentManager: React.FC = () => {
               <span>•</span>
               <span>{weeks.reduce((acc, week) => acc + (week.lectures?.length || 0), 0)} lectures</span>
               <span>•</span>
-              <span>{weeks.reduce((acc, week) => acc + (week.assignments?.length || 0), 0)} assignments</span>
+              <span>{Object.values(weekAssignments).reduce((acc, assignments) => acc + assignments.length, 0)} assignments</span>
             </div>
           </div>
 
@@ -464,7 +483,7 @@ const ContentManager: React.FC = () => {
                       </div>
                       <div className="flex items-center text-dark-300">
                         <FileText className="h-4 w-4 mr-2" />
-                        {week.assignments?.length || 0} assignments
+                        {weekAssignments[week.id]?.length || 0} assignments
                       </div>
                       <div className="flex items-center text-dark-300">
                         <Users className="h-4 w-4 mr-2" />
@@ -571,7 +590,7 @@ const ContentManager: React.FC = () => {
                             <div className="flex items-center justify-between mb-4">
                               <h4 className="text-lg font-semibold text-white flex items-center">
                                 <FileText className="h-5 w-5 mr-2" />
-                                Assignments ({week.assignments?.length || 0})
+                                Assignments ({weekAssignments[week.id]?.length || 0})
                               </h4>
                               <Button
                                 size="sm"
@@ -582,9 +601,9 @@ const ContentManager: React.FC = () => {
                               </Button>
                             </div>
 
-                            {week.assignments && week.assignments.length > 0 ? (
+                            {weekAssignments[week.id] && weekAssignments[week.id].length > 0 ? (
                               <div className="space-y-3">
-                                {week.assignments.map((assignment) => (
+                                {weekAssignments[week.id].map((assignment) => (
                                   <div key={assignment.id} className="bg-dark-800 p-4 rounded-lg">
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center space-x-3">
@@ -594,9 +613,9 @@ const ContentManager: React.FC = () => {
                                         <div>
                                           <h5 className="text-white font-medium">{assignment.title}</h5>
                                           <div className="flex items-center space-x-4 text-sm text-dark-400">
-                                            <span className="capitalize">{assignment.type}</span>
                                             <span>{assignment.totalPoints} points</span>
                                             <span>Due: {new Date(assignment.dueDate).toLocaleDateString()}</span>
+                                            <span>Max attempts: {assignment.maxAttempts}</span>
                                             <span className="flex items-center">
                                               {assignment.isPublished ? (
                                                 <>
@@ -624,7 +643,7 @@ const ContentManager: React.FC = () => {
                                         <Button
                                           size="sm"
                                           variant="ghost"
-                                          onClick={() => handleDeleteAssignment(week.id, assignment.id)}
+                                          onClick={() => handleDeleteAssignment(assignment.id)}
                                           icon={<Trash2 className="h-4 w-4" />}
                                         />
                                       </div>
@@ -685,20 +704,20 @@ const ContentManager: React.FC = () => {
       />
 
       {/* Assignment Modal */}
-      <AssignmentModal
+      <AssignmentBuilder
         isOpen={showAssignmentModal}
-        onClose={() => {
+        onCancel={() => {
           setShowAssignmentModal(false);
           setEditingAssignment(null);
         }}
         onSave={handleSaveAssignment}
-        assignment={editingAssignment}
+        assignment={editingAssignment || undefined}
       />
     </div>
   );
 };
 
-// Course Modal Component
+// Course Modal Component (unchanged)
 interface CourseModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -769,7 +788,7 @@ const CourseModal: React.FC<CourseModalProps> = ({ isOpen, onClose, onSave, cour
   );
 };
 
-// Week Modal Component
+// Week Modal Component (unchanged)
 interface WeekModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -903,175 +922,6 @@ const WeekModal: React.FC<WeekModalProps> = ({ isOpen, onClose, onSave, week, we
           </Button>
           <Button type="submit">
             {week ? 'Update Week' : 'Create Week'}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
-};
-
-// Assignment Modal Component
-interface AssignmentModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSave: (assignment: Partial<Assignment>) => void;
-  assignment: Assignment | null;
-}
-
-const AssignmentModal: React.FC<AssignmentModalProps> = ({ isOpen, onClose, onSave, assignment }) => {
-  const [formData, setFormData] = useState({
-    title: assignment?.title || '',
-    description: assignment?.description || '',
-    type: assignment?.type || 'homework' as Assignment['type'],
-    totalPoints: assignment?.totalPoints || 100,
-    dueDate: assignment?.dueDate ? assignment.dueDate.split('T')[0] : '',
-    timeLimit: assignment?.timeLimit || 0,
-    attempts: assignment?.attempts || 3,
-    isPublished: assignment?.isPublished || false
-  });
-
-  useEffect(() => {
-    if (assignment) {
-      setFormData({
-        title: assignment.title,
-        description: assignment.description,
-        type: assignment.type,
-        totalPoints: assignment.totalPoints,
-        dueDate: assignment.dueDate.split('T')[0],
-        timeLimit: assignment.timeLimit || 0,
-        attempts: assignment.attempts,
-        isPublished: assignment.isPublished
-      });
-    } else {
-      setFormData({
-        title: '',
-        description: '',
-        type: 'homework',
-        totalPoints: 100,
-        dueDate: '',
-        timeLimit: 0,
-        attempts: 3,
-        isPublished: false
-      });
-    }
-  }, [assignment]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    const assignmentData = {
-      ...formData,
-      dueDate: new Date(formData.dueDate + 'T23:59:59').toISOString(),
-      questions: assignment?.questions || []
-    };
-    
-    onSave(assignmentData);
-  };
-
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={assignment ? 'Edit Assignment' : 'Create Assignment'}>
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-dark-300 mb-2">Title</label>
-          <input
-            type="text"
-            value={formData.title}
-            onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
-            className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-            required
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-dark-300 mb-2">Description</label>
-          <textarea
-            value={formData.description}
-            onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-            className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500 resize-none"
-            rows={3}
-            required
-          />
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-2">Type</label>
-            <select
-              value={formData.type}
-              onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value as Assignment['type'] }))}
-              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="homework">Homework</option>
-              <option value="quiz">Quiz</option>
-              <option value="project">Project</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-2">Total Points</label>
-            <input
-              type="number"
-              min="1"
-              value={formData.totalPoints}
-              onChange={(e) => setFormData(prev => ({ ...prev, totalPoints: parseInt(e.target.value) }))}
-              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-2">Due Date</label>
-            <input
-              type="date"
-              value={formData.dueDate}
-              onChange={(e) => setFormData(prev => ({ ...prev, dueDate: e.target.value }))}
-              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-2">Time Limit (minutes, 0 = unlimited)</label>
-            <input
-              type="number"
-              min="0"
-              value={formData.timeLimit}
-              onChange={(e) => setFormData(prev => ({ ...prev, timeLimit: parseInt(e.target.value) }))}
-              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-dark-300 mb-2">Max Attempts</label>
-            <input
-              type="number"
-              min="1"
-              value={formData.attempts}
-              onChange={(e) => setFormData(prev => ({ ...prev, attempts: parseInt(e.target.value) }))}
-              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-          <div className="flex items-center">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={formData.isPublished}
-                onChange={(e) => setFormData(prev => ({ ...prev, isPublished: e.target.checked }))}
-                className="mr-2 rounded border-dark-600 bg-dark-700 text-primary-600 focus:ring-primary-500"
-              />
-              <span className="text-sm text-dark-300">Published (visible to students)</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="flex justify-end space-x-3">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit">
-            {assignment ? 'Update Assignment' : 'Create Assignment'}
           </Button>
         </div>
       </form>
