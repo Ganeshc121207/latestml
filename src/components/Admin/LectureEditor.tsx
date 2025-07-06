@@ -20,7 +20,7 @@ import VideoPlayer from '../VideoPlayer/VideoPlayer';
 import QuizBuilder from '../VideoPlayer/QuizBuilder';
 import { Lecture } from '../../types';
 import { Quiz } from '../../types/quiz';
-import { saveQuiz, getQuiz, validateYouTubeUrl } from '../../services/quizService';
+import { saveQuiz, getQuiz, validateYouTubeUrl, deleteQuiz } from '../../services/quizService';
 import toast from 'react-hot-toast';
 
 interface LectureEditorProps {
@@ -47,7 +47,7 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
     duration: 0,
     order: 1,
     isPublished: false,
-    requireVideoCompletion: false // New field for quiz access control
+    requireVideoCompletion: false
   });
 
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -55,6 +55,7 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
   const [showPreview, setShowPreview] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [urlError, setUrlError] = useState('');
+  const [quizLoading, setQuizLoading] = useState(false);
 
   useEffect(() => {
     if (lecture?.id) {
@@ -74,11 +75,14 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
   const loadQuiz = async () => {
     if (!lecture?.id) return;
     
+    setQuizLoading(true);
     try {
       const quizData = await getQuiz(lecture.id);
       setQuiz(quizData);
     } catch (error) {
       console.error('Error loading quiz:', error);
+    } finally {
+      setQuizLoading(false);
     }
   };
 
@@ -128,13 +132,42 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
     }
 
     try {
-      await saveQuiz(lectureData.id, quizData);
-      setQuiz(quizData);
+      // Ensure quiz has the correct lectureId
+      const quizToSave = {
+        ...quizData,
+        id: quizData.id || lectureData.id,
+        lectureId: lectureData.id
+      };
+
+      await saveQuiz(lectureData.id, quizToSave);
+      setQuiz(quizToSave);
       setShowQuizBuilder(false);
       toast.success('Quiz saved successfully!');
+      
+      // Force reload quiz to ensure latest data
+      setTimeout(() => {
+        loadQuiz();
+      }, 500);
     } catch (error) {
       toast.error('Failed to save quiz');
       console.error('Quiz save error:', error);
+    }
+  };
+
+  const handleDeleteQuiz = async () => {
+    if (!lectureData.id || !quiz) return;
+    
+    if (!confirm('Are you sure you want to delete this quiz? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      await deleteQuiz(lectureData.id);
+      setQuiz(null);
+      toast.success('Quiz deleted successfully!');
+    } catch (error) {
+      toast.error('Failed to delete quiz');
+      console.error('Quiz delete error:', error);
     }
   };
 
@@ -275,14 +308,27 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
             <h3 className="text-lg font-semibold text-white flex items-center">
               <Award className="h-5 w-5 mr-2" />
               Quiz & Assessment
+              {quizLoading && (
+                <div className="ml-2 animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600"></div>
+              )}
             </h3>
-            <Button
-              size="sm"
-              onClick={() => setShowQuizBuilder(true)}
-              icon={quiz ? <FileText className="h-4 w-4" /> : <Award className="h-4 w-4" />}
-            >
-              {quiz ? 'Edit Quiz' : 'Add Quiz'}
-            </Button>
+            <div className="flex items-center space-x-2">
+              <Button
+                size="sm"
+                onClick={() => setShowQuizBuilder(true)}
+                icon={quiz ? <FileText className="h-4 w-4" /> : <Award className="h-4 w-4" />}
+              >
+                {quiz ? 'Edit Quiz' : 'Add Quiz'}
+              </Button>
+              {quiz && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleDeleteQuiz}
+                  icon={<X className="h-4 w-4" />}
+                />
+              )}
+            </div>
           </div>
 
           {quiz ? (
@@ -303,11 +349,15 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
                     <div className="text-dark-400">Passing Score</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-white font-medium">{quiz.timeLimit || '∞'}</div>
+                    <div className="text-white font-medium">
+                      {quiz.timeLimit ? `${quiz.timeLimit}m` : '∞'}
+                    </div>
                     <div className="text-dark-400">Time Limit</div>
                   </div>
                   <div className="text-center">
-                    <div className="text-white font-medium">{quiz.maxAttempts || 3}</div>
+                    <div className="text-white font-medium">
+                      {quiz.maxAttempts === -1 ? '∞' : quiz.maxAttempts || 3}
+                    </div>
                     <div className="text-dark-400">Max Attempts</div>
                   </div>
                   <div className="text-center">
@@ -351,6 +401,11 @@ const LectureEditor: React.FC<LectureEditorProps> = ({
                     </div>
                   </div>
                 </label>
+              </div>
+
+              {/* Quiz Last Updated */}
+              <div className="text-xs text-dark-400 text-center">
+                Quiz configuration will be immediately available to students
               </div>
             </div>
           ) : (

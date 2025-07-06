@@ -18,7 +18,7 @@ import Card from '../UI/Card';
 import QuizInterface from './QuizInterface';
 import { Quiz, QuizAttempt, VideoProgress } from '../../types/quiz';
 import { useAuth } from '../../hooks/useAuth';
-import { saveVideoProgress, saveQuizAttempt, getQuizAttempts } from '../../services/quizService';
+import { saveVideoProgress, saveQuizAttempt, getQuizAttempts, getQuiz } from '../../services/quizService';
 import toast from 'react-hot-toast';
 
 interface VideoPlayerProps {
@@ -30,7 +30,7 @@ interface VideoPlayerProps {
   onVideoComplete?: () => void;
   onQuizComplete?: (score: number, passed: boolean) => void;
   isInstructor?: boolean;
-  requireVideoCompletion?: boolean; // New prop for admin control
+  requireVideoCompletion?: boolean;
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({
@@ -38,17 +38,18 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   videoUrl,
   title,
   description,
-  quiz,
+  quiz: initialQuiz,
   onVideoComplete,
   onQuizComplete,
   isInstructor = false,
-  requireVideoCompletion = false // Default to false, admin can control this
+  requireVideoCompletion = false
 }) => {
   const { user } = useAuth();
   const [videoId, setVideoId] = useState<string>('');
   const [isVideoCompleted, setIsVideoCompleted] = useState(false);
   const [videoProgress, setVideoProgress] = useState(0);
   const [showQuiz, setShowQuiz] = useState(false);
+  const [quiz, setQuiz] = useState<Quiz | null>(initialQuiz || null);
   const [quizAttempts, setQuizAttempts] = useState<QuizAttempt[]>([]);
   const [currentAttempt, setCurrentAttempt] = useState<QuizAttempt | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -57,6 +58,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   const [videoDuration, setVideoDuration] = useState(0);
   const [currentTime, setCurrentTime] = useState(0);
   const [embedError, setEmbedError] = useState(false);
+  const [quizLoading, setQuizLoading] = useState(false);
   const playerRef = useRef<any>(null);
   const progressInterval = useRef<NodeJS.Timeout | null>(null);
 
@@ -74,6 +76,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   useEffect(() => {
     if (user && lectureId) {
       loadQuizAttempts();
+      loadLatestQuiz();
     }
   }, [user, lectureId]);
 
@@ -84,6 +87,26 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       }
     };
   }, []);
+
+  // Load the latest quiz data when component mounts or lectureId changes
+  const loadLatestQuiz = async () => {
+    if (!lectureId) return;
+    
+    setQuizLoading(true);
+    try {
+      const latestQuiz = await getQuiz(lectureId);
+      if (latestQuiz) {
+        setQuiz(latestQuiz);
+        console.log('Latest quiz loaded:', latestQuiz);
+      } else if (!initialQuiz) {
+        setQuiz(null);
+      }
+    } catch (error) {
+      console.error('Error loading latest quiz:', error);
+    } finally {
+      setQuizLoading(false);
+    }
+  };
 
   const extractYouTubeVideoId = (url: string): string | null => {
     const patterns = [
@@ -296,7 +319,8 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const handleQuizRetake = () => {
     setCurrentAttempt(null);
-    // Don't close the quiz, just reset the attempt
+    // Reload the latest quiz data before retaking
+    loadLatestQuiz();
   };
 
   const openVideoInNewTab = () => {
@@ -478,6 +502,9 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             <h3 className="text-lg font-semibold text-white flex items-center">
               <Award className="h-5 w-5 mr-2 text-secondary-400" />
               {quiz.title}
+              {quizLoading && (
+                <div className="ml-2 animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600"></div>
+              )}
             </h3>
             <div className="flex items-center space-x-2">
               {quizStatus.hasPassed && (
@@ -511,7 +538,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </div>
             <div className="bg-dark-700 p-3 rounded-lg text-center">
               <div className="text-lg font-bold text-white">
-                {quiz.maxAttempts === -1 ? '∞' : `${quizStatus.attemptCount}/${quizStatus.maxAttempts}`}
+                {quiz.maxAttempts === -1 ? '∞' : `${quizStatus.attemptCount}/${quiz.maxAttempts || 3}`}
               </div>
               <div className="text-xs text-dark-400">Attempts</div>
             </div>
@@ -531,7 +558,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {quizStatus.attemptCount >= quizStatus.maxAttempts && quiz.maxAttempts !== -1 && !quizStatus.hasPassed ? (
+              {quizStatus.attemptCount >= (quiz.maxAttempts || 3) && quiz.maxAttempts !== -1 && !quizStatus.hasPassed ? (
                 <div className="bg-red-600/10 border border-red-600/20 p-4 rounded-lg">
                   <div className="flex items-center text-red-400">
                     <EyeOff className="h-5 w-5 mr-2" />
@@ -541,7 +568,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
               ) : (
                 <Button 
                   onClick={() => setShowQuiz(true)}
-                  disabled={currentAttempt !== null}
+                  disabled={currentAttempt !== null || quizLoading}
                   className="w-full"
                 >
                   {quizStatus.hasAttempts ? 'Retake Quiz' : 'Start Quiz'}

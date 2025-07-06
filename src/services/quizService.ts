@@ -9,7 +9,8 @@ import {
   query, 
   where, 
   orderBy,
-  serverTimestamp
+  serverTimestamp,
+  setDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { Quiz, QuizAttempt, VideoProgress, QuizResult, QuestionFeedback } from '../types/quiz';
@@ -26,14 +27,16 @@ const convertTimestamp = (timestamp: any): string => {
 export const saveQuiz = async (lectureId: string, quiz: Quiz): Promise<void> => {
   try {
     const quizRef = doc(db, 'quizzes', lectureId);
-    await updateDoc(quizRef, quiz).catch(async () => {
-      // If document doesn't exist, create it
-      await addDoc(collection(db, 'quizzes'), {
-        ...quiz,
-        lectureId,
-        createdAt: serverTimestamp()
-      });
-    });
+    const quizData = {
+      ...quiz,
+      lectureId,
+      updatedAt: serverTimestamp()
+    };
+    
+    // Use setDoc to ensure the document is created/updated properly
+    await setDoc(quizRef, quizData, { merge: true });
+    
+    console.log('Quiz saved successfully for lecture:', lectureId);
   } catch (error) {
     console.error('Error saving quiz:', error);
     throw new Error('Failed to save quiz');
@@ -42,20 +45,28 @@ export const saveQuiz = async (lectureId: string, quiz: Quiz): Promise<void> => 
 
 export const getQuiz = async (lectureId: string): Promise<Quiz | null> => {
   try {
-    // First try to get by document ID
+    // First try to get by document ID (lectureId)
     const quizRef = doc(db, 'quizzes', lectureId);
     const quizDoc = await getDoc(quizRef);
     
     if (quizDoc.exists()) {
-      return quizDoc.data() as Quiz;
+      const data = quizDoc.data();
+      return {
+        ...data,
+        updatedAt: convertTimestamp(data.updatedAt)
+      } as Quiz;
     }
     
-    // If not found, query by lectureId field
+    // If not found, query by lectureId field (fallback)
     const q = query(collection(db, 'quizzes'), where('lectureId', '==', lectureId));
     const querySnapshot = await getDocs(q);
     
     if (!querySnapshot.empty) {
-      return querySnapshot.docs[0].data() as Quiz;
+      const data = querySnapshot.docs[0].data();
+      return {
+        ...data,
+        updatedAt: convertTimestamp(data.updatedAt)
+      } as Quiz;
     }
     
     return null;
@@ -69,6 +80,15 @@ export const deleteQuiz = async (lectureId: string): Promise<void> => {
   try {
     const quizRef = doc(db, 'quizzes', lectureId);
     await deleteDoc(quizRef);
+    
+    // Also try to delete any quiz documents that might exist with lectureId field
+    const q = query(collection(db, 'quizzes'), where('lectureId', '==', lectureId));
+    const querySnapshot = await getDocs(q);
+    
+    const deletePromises = querySnapshot.docs.map(doc => deleteDoc(doc.ref));
+    await Promise.all(deletePromises);
+    
+    console.log('Quiz deleted successfully for lecture:', lectureId);
   } catch (error) {
     console.error('Error deleting quiz:', error);
     throw new Error('Failed to delete quiz');
@@ -81,10 +101,12 @@ export const saveQuizAttempt = async (attempt: QuizAttempt): Promise<void> => {
     const attemptData = {
       ...attempt,
       startedAt: attempt.startedAt,
-      completedAt: attempt.completedAt || serverTimestamp()
+      completedAt: attempt.completedAt || serverTimestamp(),
+      createdAt: serverTimestamp()
     };
     
     await addDoc(collection(db, 'quiz_attempts'), attemptData);
+    console.log('Quiz attempt saved successfully');
   } catch (error) {
     console.error('Error saving quiz attempt:', error);
     throw new Error('Failed to save quiz attempt');
@@ -132,16 +154,11 @@ export const saveVideoProgress = async (progress: VideoProgress): Promise<void> 
     const progressRef = doc(db, 'video_progress', `${progress.userId}_${progress.lectureId}`);
     const progressData = {
       ...progress,
-      lastWatched: serverTimestamp()
+      lastWatched: serverTimestamp(),
+      updatedAt: serverTimestamp()
     };
     
-    await updateDoc(progressRef, progressData).catch(async () => {
-      // If document doesn't exist, create it
-      await addDoc(collection(db, 'video_progress'), {
-        ...progressData,
-        createdAt: serverTimestamp()
-      });
-    });
+    await setDoc(progressRef, progressData, { merge: true });
   } catch (error) {
     console.error('Error saving video progress:', error);
     throw new Error('Failed to save video progress');
