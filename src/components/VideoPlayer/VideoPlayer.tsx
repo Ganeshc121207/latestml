@@ -161,9 +161,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
   const onPlayerError = (error: any) => {
     console.error('YouTube player error:', error);
-    // Specifically check for the common "refused to connect" type of error.
-    // Error code 5 (invalid parameter) or 101/150 (embed not allowed) are common here.
-    // Although your current message is already good.
     setEmbedError(true);
     setError('This video cannot be embedded. You can watch it directly on YouTube.');
   };
@@ -357,11 +354,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
       controls: 1,
       rel: 0,
       showinfo: 0,
-      // Removed modestbranding as it can sometimes cause issues with origin restrictions.
-      // If it's crucial for your UI, you might need to test with it re-enabled
-      // after confirming the origin fix.
-      // modestbranding: 1,
-      origin: window.location.origin, // This is crucial for security and embedding
+      origin: window.location.origin,
     },
   };
 
@@ -580,39 +573,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
                   {quizStatus.hasAttempts ? 'Retake Quiz' : 'Start Quiz'}
                 </Button>
               )}
-
-              {/* Previous Attempts */}
-              {quizAttempts.length > 0 && (
-                <div className="mt-4">
-                  <h4 className="text-sm font-medium text-white mb-2">Previous Attempts</h4>
-                  <div className="space-y-2">
-                    {quizAttempts.slice(-3).map((attempt, index) => (
-                      <div key={attempt.id} className="flex items-center justify-between bg-dark-700 p-3 rounded-lg text-sm">
-                        <div className="flex items-center">
-                          <span className="text-dark-300">Attempt {quizAttempts.length - index}</span>
-                          {attempt.passed && (
-                            <CheckCircle className="h-4 w-4 ml-2 text-accent-400" />
-                          )}
-                        </div>
-                        <div className="flex items-center space-x-3">
-                          <span className={`font-medium ${attempt.passed ? 'text-accent-400' : 'text-red-400'}`}>
-                            {attempt.score}%
-                          </span>
-                          <span className="text-dark-400">
-                            {new Date(attempt.completedAt).toLocaleDateString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           )}
         </Card>
       )}
 
-      {/* Quiz Modal */}
+      {/* Quiz Modal - Full Screen */}
       <AnimatePresence>
         {showQuiz && quiz && (
           <QuizInterface
